@@ -163,8 +163,8 @@ module BibleTools
       @debug = debug
       
       if bible_obj then
+        
         @doc = bible_obj.to_doc
-        @verses = @doc.root.xpath('chapter/verse')
         @check = EnglishSpellcheck.new debug: false #verbose: false
         
         if tts then
@@ -195,11 +195,11 @@ module BibleTools
 
       h = a.group_by(&:first)
       a2 = h.sort_by {|x, _| x.to_i}
-      a3 = a2.map do |chapter, verses|
+      @verses = a2.map do |chapter, verses|
         [chapter, verses.sort_by {|_,x| x.to_i}]
       end
         
-      [a3, trail2]
+      [@verses, trail2]
     end    
     
     # find the words associated with a given keyword
@@ -321,6 +321,52 @@ module BibleTools
       
     end
     
+    def verses(level: nil, html: false, title: nil)                  
+
+      a = @verses.map {|_, body| body}.flatten(1)
+      a1 = level ? a.select {|c,v,t,l| l <= level} : a.map {|c,v,t,l| [c,v,t]}
+      a2 = a1.map {|c,v,t,l| [c,v,t]}.uniq
+      h = a2.group_by(&:first)
+      
+      puts 'html: ' + html.inspect
+      return h unless html == true
+      
+      doc = Rexle.new('<html/>')
+
+
+      head = Rexle::Element.new('head')
+      head.add(Rexle::Element.new('h1').add_text(title) ) if title
+
+      style = Rexle::Element.new('style')
+      style.add_text '     ins {font-size: 0.8em;padding: 0.8em;}'
+      head.add style
+
+      doc.root.add head
+      body = Rexle::Element.new('body')
+
+      h.each do |chptr, verses|
+
+        h2 = Rexle::Element.new('h2').add_text chptr
+        body.add h2
+
+        verses.each do |cno, vno, text|
+
+          ins = Rexle::Element.new('ins').add_text vno
+          para = Rexle::Element.new('p')
+          para.add ins
+          para.add_text text
+          body.add para
+          
+        end
+        
+      end
+      
+      doc.root.add body
+
+      doc.root.xml pretty: true
+      
+    end
+    
     private
 
     def mine_words(r, trail, verses=[], level: 0)
@@ -329,21 +375,24 @@ module BibleTools
       found = []
       (i-=1; found = r.last[i][0].keys - trail) until found.any?
       r2 = r.last[i][0].keys - trail
+      
       a3 = r2.map do |x|
+        
         _, doc_verse = assoc_r x, r.last[i][1]
         chaptr_no = doc_verse.root.element('chapter').attributes[:no]
         everse = doc_verse.root.element('chapter/verse')
         verse_no = everse.attributes[:no]
+        
         [chaptr_no, verse_no, everse.text, level]
+        
       end.uniq
 
-      #a3b = a3.group_by {|x| x[0]}.map(&:last).flatten(1).sort_by {|x| x[0].to_i}
-      #a3b.length
-
       puts 'verses: ' + verses.inspect if @debug
+      
       verses.concat a3
       verses.uniq!
       trail.concat r2
+      
       puts 'trail.length: ' + trail.length.inspect if @debug
       puts 'verses.length: ' + verses.length.inspect if @debug
 
