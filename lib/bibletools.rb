@@ -93,17 +93,21 @@ module BibleTools
   
   class Scraper
 
-    def initialize(book: 'Exodus', url: '')
+    def initialize(book: 'Exodus', url: '', debug: false)
       
       raise ScraperErr, 'Please specify the URL' if url.empty?
       
       baseurl = url
 
       id = if book.is_a? String then
-        (BOOKS.index(book) + 1).to_s
+        i = BOOKS.index(book.gsub(/\b./){|x| x.upcase})
+        puts 'book *' + book + '* not found' unless i
+        (i + 1).to_s
       else
         book.to_s
       end
+      
+      puts 'id: ' + id.inspect if @debug
 
       url2 = baseurl + '?id=' + id
       doc = Nokorexi.new(url2).to_doc
@@ -180,9 +184,28 @@ module BibleTools
     #   Automatically select verses; verses are selected based upon word 
     # frequency 
     #
-    def asr()
+    def asr(chapters: [])
       
-      r = assoc_r()
+      r = if chapters.any? then
+        
+        doc = Rexle.new('<book/>')
+                
+        chapters.each do |n|
+          e2 = @doc.root.element("chapter[@no='#{n.to_s}']")
+          doc.root.add e2 if e2
+        end
+        
+        return doc
+        
+        keyword = wordtally(doc: doc).keys.first
+        #return keyword
+        #get the wordstally for the chapters
+        assoc_r(keyword, doc)
+        
+      else
+        assoc_r()
+      end
+      
       e = r[1].root.element('chapter/verse')
       verse_no = e.attributes[:no]
       chptr_no = e.parent.attributes[:no]
@@ -190,9 +213,11 @@ module BibleTools
       # we are backtracking the results to hopefully find a new branch to explore
       trail = r.first
 
+      #return r
       a, trail2 = mine_words(r, trail, level: 2)
       a << [chptr_no, verse_no,  e.text, 1]
-
+      puts 'a: ' + a.inspect
+      #return a
       h = a.group_by(&:first)
       a2 = h.sort_by {|x, _| x.to_i}
       @verses = a2.map do |chapter, verses|
@@ -266,9 +291,12 @@ module BibleTools
     def search(keyword, doc=@doc)
       
       verses = doc.root.xpath('chapter/verse')
+      puts 'verses: ' + verses.inspect
       a = verses.select {|x| x.text =~ /#{keyword}/i}
       
       a2 = a.map.with_index do |verse, i|
+        
+        #puts 'verse: ' + verse.xml.inspect
         txt = verse.text
         
         puts 'txt: ' + txt.inspect if @debug
@@ -278,9 +306,11 @@ module BibleTools
         
         until txt.rstrip[/[\.\?!]\W*$/] or n > 2 do
           n +=1
+          puts 'n: ' + n.inspect
           nverse = read(chapter, verse.attributes[:no].to_i + n)[0]
+          puts 'nverse: ' + nverse.inspect
           puts 'nverse: ' + nverse&.text.inspect if @debug
-          txt += nverse.text
+          txt += nverse.text if nverse
         end 
         
         if @debug then
@@ -396,10 +426,11 @@ module BibleTools
       puts 'trail.length: ' + trail.length.inspect if @debug
       puts 'verses.length: ' + verses.length.inspect if @debug
 
-      if verses.length < 30 or trail.length < 100
-        mine_words(r, trail, verses, level: level+1)
-      else
+      if verses.length > 30 or trail.length > 100
         [verses, trail]
+      else
+
+        mine_words(r, trail, verses, level: level+1)        
       end
     end    
     
